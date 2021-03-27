@@ -1,11 +1,21 @@
 import json
+import sys
 import socket
+import logging
 from datetime import datetime
 from flask import request, Flask
 from influxdb import InfluxDBClient
 from geolib import geohash
 
 DATAPOINTS_CHUNK = 80000
+
+logger = logging.getLogger("console-output")
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 app = Flask(__name__)
 app.debug = True
@@ -16,7 +26,7 @@ client.switch_database('db')
 
 @app.route('/collect', methods=['POST', 'GET'])
 def collect():
-    print(f"Request received: {datetime.now(tz=None)}")
+    logger.info(f"Request received")
     
     healthkit_data = None
     transformed_data = []
@@ -27,7 +37,7 @@ def collect():
         return "Invalid JSON Received", 400
     
     try:
-        print(f"Ingesting Metrics")
+        logger.info(f"Ingesting Metrics")
         for metric in healthkit_data.get("data", {}).get("metrics", []):
             number_fields = []
             string_fields = []
@@ -49,16 +59,16 @@ def collect():
                 number_fields.clear()
                 string_fields.clear()
 
-        print(f"Data transformation complete: {datetime.now(tz=None)}")
-        print(f"Num of data points to write: {len(transformed_data)}")
-        print(f"DB Write started: {datetime.now(tz=None)}")
+        logger.info(f"Data Transformation Complete")
+        logger.info(f"Number of data points to write: {len(transformed_data)}")
+        logger.info(f"DB Write Started")
 
         for i in range(0, len(transformed_data), DATAPOINTS_CHUNK):
-            print(f"DB Writing chunk")
+            logger.info(f"DB Writing chunk")
             client.write_points(transformed_data[i:i + DATAPOINTS_CHUNK])
         
-        print(f"DB Metrics Write complete: {datetime.now(tz=None)}")
-        print(f"Ingesting Workouts Routes")
+        logger.info(f"DB Metrics Write Complete")
+        logger.info(f"Ingesting Workouts Routes")
 
         transformed_workout_data = []
         
@@ -80,10 +90,12 @@ def collect():
                 transformed_workout_data.append(point)
 
             for i in range(0, len(transformed_workout_data), DATAPOINTS_CHUNK):
-                print(f"DB Writing chunk")
+                logger.info(f"DB Writing chunk")
                 client.write_points(transformed_workout_data[i:i + DATAPOINTS_CHUNK])
+        
+        logger.info(f"Ingesting Workouts Complete")
     except:
-        print("Caught Exception. See stacktrace for details.")
+        logger.exception("Caught Exception. See stacktrace for details.")
         return "Server Error", 500
 
     return "Success", 200
@@ -91,5 +103,5 @@ def collect():
 if __name__ == "__main__":
     hostname = socket.gethostname()
     ip_address = socket.gethostbyname(hostname)
-    print(f"Local Network Endpoint: http://{ip_address}/collect")
+    logger.info(f"Local Network Endpoint: http://{ip_address}/collect")
     app.run(host='0.0.0.0', port=5353)
